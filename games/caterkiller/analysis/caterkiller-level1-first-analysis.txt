@@ -1,0 +1,108 @@
+
+⏺ 18,008 lines. Let me read through key sections to understand the structure. Since $4000-$5FFF is Hi-Res Page 1 (graphics data), the actual code likely starts at $6000 or
+   later. Let me examine the beginning and then look for where real code begins.
+
+⏺ Searched for 1 pattern, read 1 file (ctrl+o to expand)
+
+⏺ Let me look at the disassembly starting at $6000, which is where the code should begin (after the Hi-Res graphics page).
+
+⏺ Searched for 1 pattern, read 1 file (ctrl+o to expand)
+
+⏺ Interesting — the region at $6000+ isn't machine code, it's high-bit ASCII text (Apple II format) containing what looks like assembly source text and variable/symbol
+  names. The disassembler is misinterpreting data as code. Let me examine more of the binary to find where actual executable code lives.
+
+⏺ Task(Analyze level1 binary structure)
+  ⎿  Done (54 tool uses · 148.5k tokens · 8m 31s)
+
+⏺ The disassembly is done — level1.asm is 18,008 lines. Here's what the analysis found:
+
+  Key Discovery: Embedded Symbol Table!
+
+  The assembler left the complete symbol table in the binary at $6058-$66E9. This gives us all the original variable and label names from your source code — an incredible
+  reverse engineering gift.
+
+  Game Identity
+
+  The binary reveals this is "SNOOKUMS" by Jeff Koftinoff, with a title string "SYDNEY DEVELOPMENT CORPORATION PRESENTS" at $8156-$8192. [Correction: that string was left over from a 1984 pitch to Sydney Development Corporation, which passed on the game, and was never displayed; the game was published through A.P.P.L.E.]
+
+  Memory Map ($4000-$95FF)
+  ┌───────────────────────┬─────────────┬────────┬──────────────────────────────────────────────────────────────────────┐
+  │        Region         │   Address   │  Size  │                               Content                                │
+  ├───────────────────────┼─────────────┼────────┼──────────────────────────────────────────────────────────────────────┤
+  │ Hi-Res Page 1         │ $4000-$5FFF │ 8KB    │ Screen bitmap (game playfield image)                                 │
+  ├───────────────────────┼─────────────┼────────┼──────────────────────────────────────────────────────────────────────┤
+  │ Pause handler         │ $5F80-$5F9E │ 31B    │ Ctrl-T toggle, jumps to keyboard handler                             │
+  ├───────────────────────┼─────────────┼────────┼──────────────────────────────────────────────────────────────────────┤
+  │ Assembler source text │ $6000-$6058 │ 88B    │ High-bit ASCII of GETTIME routine                                    │
+  ├───────────────────────┼─────────────┼────────┼──────────────────────────────────────────────────────────────────────┤
+  │ Symbol table          │ $6058-$66E9 │ ~1.7KB │ All variable names, labels, addresses                                │
+  ├───────────────────────┼─────────────┼────────┼──────────────────────────────────────────────────────────────────────┤
+  │ Graphics data         │ $66EA-$6F18 │ 2KB    │ Sprite/border bitmaps                                                │
+  ├───────────────────────┼─────────────┼────────┼──────────────────────────────────────────────────────────────────────┤
+  │ Page flip + delay     │ $6F19-$6F95 │ 125B   │ Double-buffer page switching, WAIT calls                             │
+  ├───────────────────────┼─────────────┼────────┼──────────────────────────────────────────────────────────────────────┤
+  │ Sprite draw engine    │ $6F96-$6FFD │ 104B   │ XOR blit with shift/mask                                             │
+  ├───────────────────────┼─────────────┼────────┼──────────────────────────────────────────────────────────────────────┤
+  │ Movement tables       │ $6FFE-$7027 │ 42B    │ Enemy speed/direction lookup                                         │
+  ├───────────────────────┼─────────────┼────────┼──────────────────────────────────────────────────────────────────────┤
+  │ Sound routines        │ $7028-$7048 │ 33B    │ Speaker toggle                                                       │
+  ├───────────────────────┼─────────────┼────────┼──────────────────────────────────────────────────────────────────────┤
+  │ Screen init           │ $7049-$7110 │ 200B   │ Borders, title text, HGR mode setup                                  │
+  ├───────────────────────┼─────────────┼────────┼──────────────────────────────────────────────────────────────────────┤
+  │ Joystick/paddle       │ $7111-$71FE │ 238B   │ PB0/PB1/PB2, PREAD ($FB1E)                                           │
+  ├───────────────────────┼─────────────┼────────┼──────────────────────────────────────────────────────────────────────┤
+  │ Status display        │ $71FF-$727A │ 124B   │ LEVEL, SCORE, LIVES rendering                                        │
+  ├───────────────────────┼─────────────┼────────┼──────────────────────────────────────────────────────────────────────┤
+  │ Player movement       │ $7280-$7317 │ 152B   │ Demo AI + keyboard dispatch                                          │
+  ├───────────────────────┼─────────────┼────────┼──────────────────────────────────────────────────────────────────────┤
+  │ Keyboard handler      │ $7318-$736A │ 83B    │ W=Up, S=Down, J=Left, K=Right                                        │
+  ├───────────────────────┼─────────────┼────────┼──────────────────────────────────────────────────────────────────────┤
+  │ Collision + draw      │ $736D-$7422 │ 182B   │ AABB collision, sprite render                                        │
+  ├───────────────────────┼─────────────┼────────┼──────────────────────────────────────────────────────────────────────┤
+  │ Game state            │ $7423-$750B │ 233B   │ Food placement, scoring, erase                                       │
+  ├───────────────────────┼─────────────┼────────┼──────────────────────────────────────────────────────────────────────┤
+  │ Sound engine          │ $74A1-$7500 │ 96B    │ Two-tone frequency sweep                                             │
+  ├───────────────────────┼─────────────┼────────┼──────────────────────────────────────────────────────────────────────┤
+  │ Enemy AI              │ $750E-$76C1 │ 436B   │ Cats chase the player, BCD scoring                                   │
+  ├───────────────────────┼─────────────┼────────┼──────────────────────────────────────────────────────────────────────┤
+  │ Entry: BEGIN          │ $76E3-$7792 │ 176B   │ Main game loop — init, frame loop, input                             │
+  ├───────────────────────┼─────────────┼────────┼──────────────────────────────────────────────────────────────────────┤
+  │ Timing/speed          │ $7795-$78A5 │ 273B   │ GETTIME, level-based difficulty                                      │
+  ├───────────────────────┼─────────────┼────────┼──────────────────────────────────────────────────────────────────────┤
+  │ Plot routines         │ $7900-$7950 │ 81B    │ Direct plot + OR plot dispatch table                                 │
+  ├───────────────────────┼─────────────┼────────┼──────────────────────────────────────────────────────────────────────┤
+  │ Address tables        │ $7951-$7A00 │ 176B   │ HGR scan line address lookup                                         │
+  ├───────────────────────┼─────────────┼────────┼──────────────────────────────────────────────────────────────────────┤
+  │ Sprite blitter        │ $7A06-$7ACA │ 197B   │ Core sprite engine w/ collision detection                            │
+  ├───────────────────────┼─────────────┼────────┼──────────────────────────────────────────────────────────────────────┤
+  │ Screen clear          │ $7ACB-$7AFE │ 52B    │ Clear HGR, enable graphics mode                                      │
+  ├───────────────────────┼─────────────┼────────┼──────────────────────────────────────────────────────────────────────┤
+  │ Alt sprite draw       │ $7AFF-$7BDB │ 221B   │ Border draw (no collision check)                                     │
+  ├───────────────────────┼─────────────┼────────┼──────────────────────────────────────────────────────────────────────┤
+  │ Address tables        │ $7BDC-$7C9B │ 192B   │ HGR page address tables                                              │
+  ├───────────────────────┼─────────────┼────────┼──────────────────────────────────────────────────────────────────────┤
+  │ Title/credits         │ $8020-$819F │ 384B   │ "SYDNEY DEVELOPMENT CORPORATION PRESENTS SNOOKUMS BY JEFF KOFTINOFF" │
+  ├───────────────────────┼─────────────┼────────┼──────────────────────────────────────────────────────────────────────┤
+  │ Screen dissolve       │ $81A0-$81B9 │ 26B    │ XOR scramble visual effect                                           │
+  ├───────────────────────┼─────────────┼────────┼──────────────────────────────────────────────────────────────────────┤
+  │ Sprite data           │ $81E0-$89FF │ ~2KB   │ All game sprites (player, cats, food)                                │
+  ├───────────────────────┼─────────────┼────────┼──────────────────────────────────────────────────────────────────────┤
+  │ Character render      │ $8A00-$8A48 │ 73B    │ Bitmap font digit/letter drawing                                     │
+  ├───────────────────────┼─────────────┼────────┼──────────────────────────────────────────────────────────────────────┤
+  │ Font bitmaps          │ $8A49-$8CFF │ ~660B  │ Character bitmap definitions                                         │
+  ├───────────────────────┼─────────────┼────────┼──────────────────────────────────────────────────────────────────────┤
+  │ Page 2 engine         │ $9300-$943C │ 317B   │ Duplicate sprite engine for double-buffering                         │
+  ├───────────────────────┼─────────────┼────────┼──────────────────────────────────────────────────────────────────────┤
+  │ Address tables        │ $943D-$95BC │ 384B   │ HGR page 2 lookup tables                                             │
+  └───────────────────────┴─────────────┴────────┴──────────────────────────────────────────────────────────────────────┘
+  Architecture Highlights
+
+  - Double-buffered rendering — two complete sprite engines ($7900/$9300), page flip at $6F52
+  - XOR sprite drawing — same call draws and erases (classic Apple II technique)
+  - Pixel-perfect collision — AND sprite with screen content during blit
+  - BCD scoring — 3-byte score at $8A-$8C (up to 999,999) using 6502 decimal mode
+  - Enemy AI — cats compare their position to yours and chase
+  - Difficulty scaling — GETTIME ($77AA) makes enemies faster at higher levels; main loop adjusts update ratio
+  - Sound mute — Ctrl-S toggles bit 7 of $84 (SOUND)
+  - JMP $0803 at $7792 — exits to a loader in low memory for level transitions
+
