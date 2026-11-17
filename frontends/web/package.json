@@ -1,0 +1,9 @@
+{
+  "name": "caterkiller-web",
+  "private": true,
+  "type": "module",
+  "description": "Marks the frontend scripts as ES modules so node can run the tests; the pages need no npm install.",
+  "scripts": {
+    "test": "node --test test/"
+  }
+}

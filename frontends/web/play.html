@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Caterkiller 2026</title>
+  <link rel="icon" href="data:," />
+  <style>
+    body { margin: 0; background: #111; color: #ddd; font-family: system-ui, sans-serif; overflow: hidden; }
+    #ui {
+      position: fixed; left: 12px; top: 12px;
+      background: rgba(0,0,0,.6); padding: 12px; border-radius: 10px;
+      z-index: 10; user-select: none;
+    }
+    button { margin-right: 6px; }
+    #status { margin-top: 8px; font-size: 12px; opacity: 0.9; white-space: pre; }
+    #hint { margin-top: 6px; font-size: 12px; opacity: 0.75; }
+    .touch-btn {
+      display: none;
+      position: fixed; bottom: 0; width: 50%; height: 30%;
+      z-index: 20; border: none; background: transparent; margin: 0; padding: 0;
+      font-size: 48px; color: rgba(255,255,255,0.15);
+      align-items: center; justify-content: center;
+      user-select: none; -webkit-user-select: none;
+      touch-action: none;
+    }
+    .touch-btn:active { color: rgba(255,255,255,0.4); }
+    #touchLeft  { left: 0; }
+    #touchRight { right: 0; }
+    @media (pointer: coarse) {
+      .touch-btn { display: flex; }
+    }
+    #copyright {
+      position: fixed; bottom: 8px; left: 0; right: 0;
+      text-align: center; font-size: 13px; color: rgba(255,255,255,0.35);
+      z-index: 10; user-select: none; pointer-events: none;
+    }
+  </style>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "./vendor/three/three.module.js",
+      "three/addons/": "./vendor/three/"
+    }
+  }
+  </script>
+</head>
+
+<body>
+  <div id="ui">
+    <div>
+      <button id="colorToggle">Color</button>
+      <label><input type="checkbox" id="autoOrbit" checked /> Auto-orbit</label>
+    </div>
+    <div id="status">Loading&hellip;</div>
+    <div id="hint">J/&larr;: left &middot; K/&rarr;: right &middot; Esc: pause<br>Drag: orbit &middot; Shift+drag: pan &middot; Scroll: zoom</div>
+  </div>
+
+  <div id="copyright">Copyright 1984 to 2026 by Jeff Koftinoff &lt;jeffk@statusbar.com&gt;</div>
+  <button id="touchLeft" class="touch-btn" aria-label="Move left">&#9664;</button>
+  <button id="touchRight" class="touch-btn" aria-label="Move right">&#9654;</button>
+
+  <script src="../shared/cpu6502/6502.bundle.js"></script>
+
+  <script type="module">
+    import { Apple2, Controls, GameClock, hex4 } from "./apple2.js";
+    import * as HGR from "./hgr.js";
+    import { HgrView } from "./view3d.js";
+
+    // In build/ when served from the repository, next to the page in a deployment
+    const BINARY_PATHS = location.pathname.includes("/frontends/web/")
+      ? ["../../build/caterkiller/caterkiller2026.bin", "caterkiller2026.bin"]
+      : ["caterkiller2026.bin", "../../build/caterkiller/caterkiller2026.bin"];
+    const LOAD_ADDR = 0x6000;
+    const START_PC = 0x7200;
+
+    const $ = (id) => document.getElementById(id);
+    const status = (s) => { $("status").textContent = s; };
+
+    if (!window.CPU6502) {
+      status("CPU6502 is not available. Check 6502.bundle.js.");
+      throw new Error("CPU6502 missing");
+    }
+
+    let view;
+    try {
+      view = new HgrView({ colorMode: false, fit: true });
+    } catch (e) {
+      status("WebGL is not available in this browser: " + e.message);
+      throw e;
+    }
+
+    const machine = new Apple2(window.CPU6502);
+    let running = false;
+    const controls = new Controls(machine, () => running).attach(window);
+    controls.bindButton($("touchLeft"), "ArrowLeft");
+    controls.bindButton($("touchRight"), "ArrowRight");
+    const clock = new GameClock();
+    const colorPix = new Uint8Array(HGR.COLOR_WIDTH * HGR.HEIGHT);
+    const monoPix = new Uint8Array(HGR.WIDTH * HGR.HEIGHT);
+
+    function present() {
+      if (view.colorMode) HGR.decodeColor(machine.ram, colorPix);
+      else HGR.decodeMono(machine.ram, monoPix);
+      view.upload(colorPix, monoPix);
+    }
+
+    function frame(timestamp) {
+      if (!running) return;
+      const ticks = clock.ticks(timestamp);
+      if (ticks > 0) {
+        controls.apply();
+        machine.tick(1);
+        const r = machine.run({ budgetMs: 14 * ticks, frames: ticks });
+        present();
+        if (r.stopped) {
+          running = false;
+          status(`HALT: uninitialised memory at $${hex4(r.pc)}`);
+          view.render();
+          return;
+        }
+        status(`Running  PC=$${hex4(r.pc)}  steps=${r.steps}  ticks=${ticks}${r.presents ? "  [presented]" : ""}`);
+      }
+      if ($("autoOrbit").checked) view.autoOrbit(timestamp);
+      view.render();
+      requestAnimationFrame(frame);
+    }
+
+    $("colorToggle").onclick = () => {
+      view.setColorMode(!view.colorMode);
+      $("colorToggle").textContent = view.colorMode ? "B&W" : "Color";
+      present();
+      if (!running) view.render();
+    };
+
+    function idle() {
+      if (!running) view.render();
+      requestAnimationFrame(idle);
+    }
+    idle();
+
+    async function fetchBinary() {
+      let lastError = null;
+      for (const path of BINARY_PATHS) {
+        try {
+          const resp = await fetch(path, { cache: "no-store" });
+          if (resp.ok) return new Uint8Array(await resp.arrayBuffer());
+          lastError = new Error(`${path}: HTTP ${resp.status}`);
+        } catch (e) {
+          lastError = e;
+        }
+      }
+      throw new Error(`Could not load caterkiller2026.bin (${lastError?.message}). Run "make caterkiller2026" first.`);
+    }
+
+    async function start() {
+      try {
+        const bytes = await fetchBinary();
+        machine.load(bytes, LOAD_ADDR, START_PC);
+        clock.reset();
+        running = true;
+        status(`Running  ${bytes.length} bytes loaded`);
+        requestAnimationFrame(frame);
+      } catch (e) {
+        console.error(e);
+        status(String(e.message || e));
+      }
+    }
+
+    start();
+  </script>
+</body>
+</html>

@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Apple II binary runner</title>
+  <link rel="icon" href="data:," />
+  <style>
+    body { margin: 0; background: #111; color: #ddd; font-family: system-ui, sans-serif; overflow: hidden; }
+    #ui {
+      position: fixed; left: 12px; top: 12px;
+      background: rgba(0,0,0,.6); padding: 12px; border-radius: 10px;
+      z-index: 10; user-select: none;
+    }
+    label { display: block; margin-top: 6px; font-size: 12px; opacity: 0.9; }
+    label.inline { display: inline; }
+    input[type=text] { width: 140px; }
+    button { margin-top: 10px; margin-right: 6px; }
+    #status { margin-top: 8px; font-size: 12px; opacity: 0.9; white-space: pre; }
+    #hint { margin-top: 6px; font-size: 12px; opacity: 0.75; }
+  </style>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "./vendor/three/three.module.js",
+      "three/addons/": "./vendor/three/"
+    }
+  }
+  </script>
+</head>
+
+<body>
+  <div id="ui">
+    <label for="bin">Binary</label>
+    <input id="bin" type="file" accept=".bin,application/octet-stream" />
+
+    <label for="loadAddr">Load address (hex)</label>
+    <input id="loadAddr" type="text" value="6000" />
+
+    <label for="startPC">Start PC (hex)</label>
+    <input id="startPC" type="text" value="7200" />
+
+    <label for="bpAddr">Breakpoint PC (hex, blank = off)</label>
+    <input id="bpAddr" type="text" value="" placeholder="e.g. 7201" />
+
+    <div>
+      <button id="run">Run</button>
+      <button id="stop">Stop</button>
+      <button id="colorToggle">B&amp;W</button>
+    </div>
+    <label class="inline"><input type="checkbox" id="autoOrbit" /> Auto-orbit</label>
+
+    <div id="status">Idle</div>
+    <div id="hint">J/&larr;: left &middot; K/&rarr;: right &middot; Esc: pause<br>Present strobe: STA $C054<br>Drag: orbit &middot; Shift+drag: pan &middot; Scroll: zoom</div>
+  </div>
+
+  <script src="../shared/cpu6502/6502.bundle.js"></script>
+
+  <script type="module">
+    import { Apple2, Controls, GameClock, Trace, hex4 } from "./apple2.js";
+    import * as HGR from "./hgr.js";
+    import { HgrView } from "./view3d.js";
+
+    const $ = (id) => document.getElementById(id);
+    const status = (s) => { $("status").textContent = s; };
+
+    if (!window.CPU6502) {
+      status("CPU6502 is not available. Check ../shared/cpu6502/6502.bundle.js.");
+      throw new Error("CPU6502 missing");
+    }
+
+    let view;
+    try {
+      view = new HgrView({ colorMode: true });
+    } catch (e) {
+      status("WebGL is not available in this browser: " + e.message);
+      throw e;
+    }
+
+    const machine = new Apple2(window.CPU6502);
+    let running = false;
+    const controls = new Controls(machine, () => running).attach(window);
+    const clock = new GameClock();
+    const trace = new Trace(16);
+    const colorPix = new Uint8Array(HGR.COLOR_WIDTH * HGR.HEIGHT);
+    const monoPix = new Uint8Array(HGR.WIDTH * HGR.HEIGHT);
+
+    function present() {
+      if (view.colorMode) HGR.decodeColor(machine.ram, colorPix);
+      else HGR.decodeMono(machine.ram, monoPix);
+      view.upload(colorPix, monoPix);
+    }
+
+    function hexToU16(s) {
+      const v = parseInt(String(s).trim(), 16);
+      if (!Number.isFinite(v) || v < 0 || v > 0xFFFF) throw new Error("Bad hex: " + s);
+      return v;
+    }
+
+    function breakpoint() {
+      const raw = $("bpAddr").value.trim();
+      const v = parseInt(raw, 16);
+      return raw && Number.isFinite(v) ? v & 0xFFFF : -1;
+    }
+
+    function frame(timestamp) {
+      if (!running) return;
+      const ticks = clock.ticks(timestamp);
+      if (ticks > 0) {
+        controls.apply();
+        machine.tick(1);
+        const r = machine.run({ budgetMs: 12 * ticks, frames: ticks, breakpoint: breakpoint(), trace });
+        present();
+        if (r.stopped) {
+          running = false;
+          const what = r.stopped === "break" ? "BREAK" : "HALT: uninitialised memory";
+          status(`${what} at $${hex4(r.pc)}\n${machine.registers()}\n${trace.format(r.pc)}`);
+          view.render();
+          return;
+        }
+        status(`Running  PC=$${hex4(r.pc)}  steps=${r.steps}  ticks=${ticks}${r.presents ? "  [presented]" : ""}`);
+      }
+      if ($("autoOrbit").checked) view.autoOrbit(timestamp);
+      view.render();
+      requestAnimationFrame(frame);
+    }
+
+    $("run").onclick = async () => {
+      try {
+        const f = $("bin").files?.[0];
+        if (!f) return status("Pick a .bin first");
+        const loadAddr = hexToU16($("loadAddr").value);
+        const startPC = hexToU16($("startPC").value);
+        const bytes = new Uint8Array(await f.arrayBuffer());
+        machine.load(bytes, loadAddr, startPC);
+        clock.reset();
+        running = true;
+        status(`Running\nLoaded ${bytes.length} bytes at $${hex4(loadAddr)}\nPC=$${hex4(startPC)}`);
+        requestAnimationFrame(frame);
+      } catch (e) {
+        console.error(e);
+        status(String(e));
+      }
+    };
+
+    $("stop").onclick = () => {
+      running = false;
+      status(`Stopped  ${machine.registers()}`);
+    };
+
+    $("colorToggle").onclick = () => {
+      view.setColorMode(!view.colorMode);
+      $("colorToggle").textContent = view.colorMode ? "B&W" : "Color";
+      present();
+      if (!running) view.render();
+    };
+
+    // Keep the camera responsive while nothing is running
+    function idle() {
+      if (!running) view.render();
+      requestAnimationFrame(idle);
+    }
+    idle();
+  </script>
+</body>
+</html>
