@@ -1,0 +1,23 @@
+[package]
+name = "caterkiller-tui"
+version = "0.2.0"
+edition = "2021"
+rust-version = "1.70"
+description = "Terminal frontend for Caterkiller: a 6502 / Apple II HGR emulator that renders the screen as Braille"
+license = "MIT"
+repository = "https://github.com/jdkoftinoff/caterkiller"
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "caterkiller-tui"
+path = "src/main.rs"
+
+[dependencies]
+crossterm = "0.28"
+
+[profile.release]
+opt-level = 3
+lto = true
