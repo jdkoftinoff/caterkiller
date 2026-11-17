@@ -1,0 +1,47 @@
+name: verify
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - name: Rebuild original levels and compare to 1984 binaries
+        run: make verify
+      - name: Build Caterkiller 2026
+        run: make caterkiller2026
+      - name: Unit tests for the Python tools
+        run: python3 -m unittest discover -s tests -v
+
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Web frontend tests (modules and CPU bundle)
+        run: make test-web
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - name: Build the deploy package
+        run: make deploy-web
+
+  tui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build terminal frontend
+        run: make tui
+      - name: Terminal frontend tests
+        run: make test-rust
+      - name: Clippy
+        run: cargo clippy --release --all-targets --manifest-path frontends/tui/Cargo.toml -- -D warnings
